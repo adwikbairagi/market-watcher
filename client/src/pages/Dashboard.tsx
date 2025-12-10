@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import Header from "@/components/Header";
 import StatisticsCards from "@/components/StatisticsCards";
 import PerformanceBanner from "@/components/PerformanceBanner";
@@ -8,22 +9,9 @@ import StockChart from "@/components/StockChart";
 import StockTable from "@/components/StockTable";
 import LoadingState from "@/components/LoadingState";
 import ErrorState from "@/components/ErrorState";
-import type { TimeRange, SelectionMode, Stock } from "@/lib/stock-types";
-import {
-  generateMockStocks,
-  generateMockIndexData,
-  generateMockChartData,
-} from "@/lib/mock-data";
+import type { TimeRange, SelectionMode, Stock, IndexData, ChartData } from "@/lib/stock-types";
 
 export default function Dashboard() {
-  // todo: remove mock functionality - replace with real API data
-  const [isLoading] = useState(false);
-  const [error] = useState<string | null>(null);
-
-  // Stock data state
-  const [stocks] = useState<Stock[]>(() => generateMockStocks());
-  const [indexData] = useState(() => generateMockIndexData());
-
   // Selection state
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("topN");
   const [topN, setTopN] = useState(10);
@@ -32,8 +20,25 @@ export default function Dashboard() {
   // Time range state
   const [timeRange, setTimeRange] = useState<TimeRange>("1D");
 
-  // Chart data based on time range
-  const chartData = useMemo(() => generateMockChartData(timeRange), [timeRange]);
+  // Fetch stocks data
+  const {
+    data: stocks = [],
+    isLoading: stocksLoading,
+    error: stocksError,
+    refetch: refetchStocks,
+  } = useQuery<Stock[]>({
+    queryKey: ["/api/stocks"],
+  });
+
+  // Fetch index data
+  const {
+    data: indexData,
+    isLoading: indexLoading,
+    error: indexError,
+    refetch: refetchIndex,
+  } = useQuery<IndexData>({
+    queryKey: ["/api/index"],
+  });
 
   // Get selected stocks based on mode
   const selectedStocks = useMemo(() => {
@@ -44,6 +49,28 @@ export default function Dashboard() {
       return stocks.filter((s) => manualSelectedSymbols.has(s.symbol));
     }
   }, [stocks, selectionMode, topN, manualSelectedSymbols]);
+
+  // Get selected symbols for historical data query
+  const selectedSymbols = useMemo(() => 
+    selectedStocks.map(s => s.symbol).join(","),
+    [selectedStocks]
+  );
+
+  // Fetch historical data
+  const {
+    data: chartData,
+    isLoading: chartLoading,
+    error: chartError,
+    refetch: refetchChart,
+  } = useQuery<ChartData>({
+    queryKey: ["/api/historical", timeRange, selectedSymbols],
+    queryFn: async () => {
+      const response = await fetch(`/api/historical?timeRange=${timeRange}&symbols=${selectedSymbols}`);
+      if (!response.ok) throw new Error("Failed to fetch historical data");
+      return response.json();
+    },
+    enabled: selectedStocks.length > 0,
+  });
 
   // Calculate statistics for selected stocks
   const statistics = useMemo(() => {
@@ -59,21 +86,18 @@ export default function Dashboard() {
     };
   }, [selectedStocks]);
 
-  // Calculate performance percentages (mock for now)
-  // todo: remove mock functionality - calculate from real historical data
+  // Calculate performance percentages
   const sp500Change = useMemo(() => {
-    const data = chartData.sp500;
-    if (data.length < 2) return 0;
-    const first = data[0].value;
-    const last = data[data.length - 1].value;
+    if (!chartData?.sp500 || chartData.sp500.length < 2) return 0;
+    const first = chartData.sp500[0].value;
+    const last = chartData.sp500[chartData.sp500.length - 1].value;
     return ((last - first) / first) * 100;
   }, [chartData]);
 
   const selectionChange = useMemo(() => {
-    const data = chartData.average;
-    if (data.length < 2) return 0;
-    const first = data[0].value;
-    const last = data[data.length - 1].value;
+    if (!chartData?.average || chartData.average.length < 2) return 0;
+    const first = chartData.average[0].value;
+    const last = chartData.average[chartData.average.length - 1].value;
     return ((last - first) / first) * 100;
   }, [chartData]);
 
@@ -97,9 +121,34 @@ export default function Dashboard() {
     URL.revokeObjectURL(link.href);
   }, [stocks]);
 
-  const handleRetry = () => {
-    // todo: implement retry logic with real API
-    console.log("Retry loading data");
+  const handleRetry = useCallback(() => {
+    refetchStocks();
+    refetchIndex();
+    refetchChart();
+  }, [refetchStocks, refetchIndex, refetchChart]);
+
+  // Loading state
+  const isLoading = stocksLoading || indexLoading;
+  
+  // Error state
+  const error = stocksError || indexError;
+  const errorMessage = error instanceof Error 
+    ? error.message 
+    : "Unable to load stock data. Please check your connection and try again.";
+
+  // Default index data while loading
+  const displayIndexData: IndexData = indexData || {
+    value: 0,
+    change: 0,
+    changePercent: 0,
+  };
+
+  // Default chart data
+  const displayChartData: ChartData = chartData || {
+    sp500: [],
+    average: [],
+    highest: [],
+    lowest: [],
   };
 
   if (isLoading) {
@@ -115,7 +164,7 @@ export default function Dashboard() {
   if (error) {
     return (
       <div className="min-h-screen bg-background">
-        <ErrorState message={error} onRetry={handleRetry} />
+        <ErrorState message={errorMessage} onRetry={handleRetry} />
       </div>
     );
   }
@@ -123,7 +172,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-background">
       <Header
-        indexData={indexData}
+        indexData={displayIndexData}
         periodChangePercent={sp500Change}
         onExportCSV={handleExportCSV}
       />
@@ -158,7 +207,13 @@ export default function Dashboard() {
 
         <div className="rounded-md border bg-card p-4 md:p-6">
           <h2 className="text-lg font-semibold mb-4">Price History</h2>
-          <StockChart data={chartData} timeRange={timeRange} />
+          {chartLoading ? (
+            <div className="h-96 flex items-center justify-center">
+              <div className="text-muted-foreground">Loading chart data...</div>
+            </div>
+          ) : (
+            <StockChart data={displayChartData} timeRange={timeRange} />
+          )}
         </div>
 
         <div className="rounded-md border bg-card p-4 md:p-6">
