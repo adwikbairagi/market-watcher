@@ -1,5 +1,5 @@
 {
   "version": 2,
-  "buildCommand": "npm install && npm run build && mkdir -p public && cp -r dist/public/* public",
+  "buildCommand": "npm install && npm run build",
   "outputDirectory": "public"
 }
