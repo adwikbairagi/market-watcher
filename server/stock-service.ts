@@ -1,4 +1,8 @@
 import { config } from "./config";
+console.log("DEBUG useMockData =", config.useMockData);
+console.log("DEBUG provider =", config.provider);
+console.log("DEBUG apiKey length =", config.apiKey?.length);
+console.log("BASE URL =", config.baseUrl);
 
 export interface Stock {
   symbol: string;

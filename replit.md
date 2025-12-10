@@ -44,7 +44,7 @@ When no API key is configured, the app uses realistic mock data. This is useful 
 To use real stock market data, set these environment variables:
 
 ```bash
-STOCK_API_KEY=your_api_key_here
+STOCK_API_KEY=
 STOCK_API_BASE_URL=https://finnhub.io/api/v1  # or your provider's URL
 ```
 

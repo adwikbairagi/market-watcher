@@ -45,9 +45,17 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
-      refetchInterval: false,
-      refetchOnWindowFocus: false,
-      staleTime: Infinity,
+
+      // refresh data every 120 seconds (120000 ms)
+      refetchInterval: 120000,
+
+      // optional: also refetch when you focus the tab again
+      refetchOnWindowFocus: true,
+
+      // data is considered "fresh" for 30 seconds
+      // (after that React Query is allowed to refetch on some triggers)
+      staleTime: 30000,
+
       retry: false,
     },
     mutations: {
