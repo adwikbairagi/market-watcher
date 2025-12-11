@@ -43,5 +43,5 @@ export const config = {
   apiKey: STOCK_API_KEY,
   baseUrl: STOCK_API_BASE_URL,
   provider: STOCK_API_PROVIDER,
-  useMockData: !STOCK_API_KEY,
+  useMockData: false,
 };
